@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f7f8fa" />
+  <title>FOCUS — Organizador pessoal</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <section id="auth-screen" class="auth-screen" aria-labelledby="auth-title">
+    <div class="auth-card">
+      <a class="auth-brand" href="#">FOCUS</a>
+      <p class="eyebrow">ORGANIZAÇÃO PESSOAL</p>
+      <h1 id="auth-title">Acesse sua conta</h1>
+      <p class="muted">Entre para continuar sua rotina de estudos.</p>
+      <form id="auth-form" class="auth-form">
+        <label class="field">E-mail<input id="auth-email" type="email" autocomplete="email" placeholder="voce@exemplo.com" required /></label>
+        <label class="field">Senha<input id="auth-password" type="password" autocomplete="current-password" minlength="6" placeholder="Mínimo de 6 caracteres" required /></label>
+        <button id="auth-submit" class="button primary" type="submit">Entrar</button>
+      </form>
+      <button id="auth-mode-toggle" class="auth-link" type="button">Criar uma conta</button>
+      <div class="auth-divider"><span>ou</span></div>
+      <button id="google-login" class="button google-button" type="button"><span aria-hidden="true">G</span> Continuar com Google</button>
+      <button id="local-login" class="button secondary local-login" type="button">Continuar sem conta neste navegador</button>
+      <p id="auth-status" class="status-message" aria-live="polite"></p>
+      <p class="auth-note">Acesso local mantém os dados somente neste navegador. Configure as credenciais do Supabase no script para ativar contas e Google.</p>
+    </div>
+  </section>
+
+  <div id="app-shell" class="app-shell" hidden>
+    <aside id="sidebar" class="sidebar" aria-label="Menu lateral">
+      <div class="sidebar-top">
+        <a class="brand" href="#configurar" aria-label="FOCUS, configurar">FOCUS</a>
+        <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Recolher menu" aria-expanded="true">‹</button>
+      </div>
+      <nav class="navigation" aria-label="Navegação principal">
+        <button class="nav-button active" data-view="configurar" type="button"><span class="nav-icon" aria-hidden="true">⚙</span><span class="nav-label">Configurar</span></button>
+        <button class="nav-button" data-view="ciclos" type="button"><span class="nav-icon" aria-hidden="true">◷</span><span class="nav-label">Ciclos</span></button>
+        <button class="nav-button" data-view="afiliados" type="button"><span class="nav-icon" aria-hidden="true">◇</span><span class="nav-label">Afiliados</span></button>
+      </nav>
+      <div class="sidebar-actions">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" aria-label="Alternar tema">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.2 15.1A8.7 8.7 0 0 1 8.9 3.8 8.9 8.9 0 1 0 20.2 15.1Z"/></svg><span class="nav-label">Tema</span>
+        </button>
+        <button id="reset-data" class="button danger reset-button" type="button"><span class="nav-icon" aria-hidden="true">⌫</span><span class="nav-label">Apagar dados</span></button>
+        <button id="logout-button" class="sidebar-logout" type="button"><span class="nav-icon" aria-hidden="true">↪</span><span class="nav-label">Sair</span></button>
+      </div>
+    </aside>
+    <div class="app-content">
+  <main>
+    <section id="view-configurar" class="view active" aria-labelledby="configurar-title">
+      <div class="page-heading"><div><p class="eyebrow">ORGANIZAÇÃO</p><h1 id="configurar-title">Configurar</h1><p class="muted">Defina as matérias, estime as horas e ajuste sua disponibilidade.</p></div></div>
+      <div class="settings-layout">
+        <section class="section-block">
+          <div class="section-heading"><div><h2>Matérias</h2><p class="muted">Dificuldade, conteúdo e importância são avaliados separadamente.</p></div></div>
+          <form id="subject-form" class="form-grid subject-form">
+            <input id="subject-id" type="hidden" />
+            <label class="field field-name">Nome da matéria<input id="subject-name" type="text" maxlength="80" placeholder="Ex.: Matemática" required /></label>
+            <label class="field">Dificuldade<select id="subject-difficulty" required><option value="1">1 — Muito fácil</option><option value="2">2 — Fácil</option><option value="3" selected>3 — Mediana</option><option value="4">4 — Difícil</option><option value="5">5 — Muito difícil</option></select></label>
+            <label class="field">Quantidade de conteúdo<select id="subject-content" required><option value="1">1 — Muito pouco</option><option value="2">2 — Pouco</option><option value="3" selected>3 — Mediano</option><option value="4">4 — Muito</option><option value="5">5 — Muitíssimo</option></select></label>
+            <label class="field">Peso / importância<input id="subject-weight" type="number" min="1" step="1" value="1" required /></label>
+            <div class="form-actions"><button id="subject-submit" class="button primary" type="submit">Adicionar matéria</button><button id="subject-cancel" class="button secondary hidden" type="button">Cancelar edição</button></div>
+          </form>
+          <div class="table-wrap"><table><thead><tr><th>Matéria</th><th>Dificuldade</th><th>Conteúdo</th><th>Peso</th><th>Ações</th></tr></thead><tbody id="subjects-list"></tbody></table></div>
+          <p id="subjects-empty" class="empty-note">Nenhuma matéria cadastrada ainda.</p>
+          <div class="cycle-config">
+            <label class="field cycle-name-field">Nome do ciclo<input id="cycle-name" type="text" maxlength="80" placeholder="Ex.: Ciclo de estudos" /></label>
+            <label class="field factor-field">Fator de ajuste<input id="cycle-factor" type="number" min="30" max="1000" step="1" value="60" /><span class="field-hint">Padrão 60; ajuste a duração estimada.</span></label>
+            <div class="button-row"><button id="create-cycle-button" class="button primary" type="button">Criar ciclo</button><button id="recalculate-cycle-button" class="button secondary" type="button">Recalcular ciclo</button></div>
+          </div>
+          <p class="hint">Estimativa proporcional: dificuldade × conteúdo × peso × fator ÷ 60, arredondada para a hora mais próxima. O fator, de 30 a 1000, altera a duração; a proporção vem dos três critérios. Mínimo de 1 h por matéria. A prévia não altera ciclos existentes.</p>
+          <div id="distribution-preview" class="distribution-preview" aria-live="polite"></div>
+        </section>
+
+        <section class="section-block availability-section">
+          <div class="section-heading"><div><h2>Disponibilidade semanal</h2><p class="muted">Referência editável; nenhum horário fica vinculado a uma matéria.</p></div></div>
+          <p class="hint availability-hint">Períodos sugeridos conforme sua rotina. Ajuste cada início e fim, ou deixe o dia indisponível.</p>
+          <div id="availability-schedule" class="availability-schedule"></div>
+          <button id="save-availability" class="button secondary" type="button">Salvar disponibilidade</button>
+          <p id="availability-status" class="status-message" aria-live="polite"></p>
+          <label class="field availability-notes">Observações sobre a rotina<textarea id="availability" rows="4" aria-label="Observações sobre a disponibilidade"></textarea></label>
+        </section>
+      </div>
+    </section>
+
+    <section id="view-ciclos" class="view" aria-labelledby="ciclos-title" hidden>
+      <div class="page-heading"><div><p class="eyebrow">ESTUDOS</p><h1 id="ciclos-title">Ciclos</h1><p class="muted">Escolha livremente a matéria. Registre apenas o tempo líquido estudado.</p></div></div>
+      <section id="study-session-section" class="section-block session-section">
+        <div class="section-heading"><div><h2>Registrar sessão de estudo</h2><p class="muted">Horas e minutos acumulam; somente horas líquidas completas preenchem os quadradinhos.</p></div></div>
+        <form id="study-session-form" class="session-form">
+          <label class="field">Matéria<select id="session-subject" required></select></label>
+          <label class="field">Horas<input id="session-hours" type="number" min="0" max="100" step="1" value="0" required /></label>
+          <label class="field">Minutos<input id="session-minutes" type="number" min="0" max="59" step="1" value="0" required /></label>
+          <button class="button primary" type="submit">Registrar tempo líquido</button>
+        </form>
+        <p id="session-status" class="status-message" aria-live="polite"></p>
+        <p class="hint">Sugestão, não regra: variar entre áreas quando fizer sentido e considerar até três matérias no dia. Você decide.</p>
+      </section>
+      <section class="section-block review-section">
+        <div class="section-heading"><div><h2>Revisão avulsa</h2><p class="muted">Registros de revisão ficam separados e não contam no ciclo.</p></div></div>
+        <form id="review-form" class="review-form"><label class="field">Assunto<input id="review-topic" type="text" maxlength="100" placeholder="Ex.: revisão de anotações" required /></label><label class="field">Duração em minutos<input id="review-minutes" type="number" min="1" max="1440" step="1" required /></label><button class="button secondary" type="submit">Registrar revisão</button></form>
+        <ul id="reviews-list" class="reviews-list"></ul>
+      </section>
+      <div id="cycles-list" class="cycles-list"></div>
+      <p id="cycles-empty" class="empty-note">Nenhum ciclo criado. Configure as matérias para começar.</p>
+    </section>
+
+    <section id="view-afiliados" class="view" aria-labelledby="afiliados-title" hidden>
+      <div class="page-heading"><div><p class="eyebrow">SHOPEE</p><h1 id="afiliados-title">Afiliados</h1><p class="muted">Acompanhe sua rotina e registre a produção de cada dia.</p></div></div>
+      <section class="section-block affiliate-today">
+        <div class="section-heading"><div><h2>Rotina de hoje</h2><p id="affiliate-date" class="muted"></p></div></div>
+        <div class="goals" aria-label="Metas diárias"><p><strong>3</strong><span>Meta mínima</span></p><p><strong>5</strong><span>Meta ideal</span></p></div>
+        <form id="affiliate-form" class="affiliate-form"><label class="field">Vídeos publicados hoje<input id="videos-count" type="number" min="0" step="1" value="0" required /></label><button class="button primary" type="submit">Salvar registro de hoje</button></form>
+        <p id="today-status" class="today-status" aria-live="polite"></p>
+        <div class="checklist-block"><h3>Checklist de trabalho</h3><div id="affiliate-checklist" class="checklist"></div></div>
+      </section>
+      <section class="section-block history-section"><div class="section-heading"><div><h2>Histórico diário</h2><p class="muted">Os dias abaixo da meta continuam registrados.</p></div></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Vídeos publicados</th><th>Meta mínima</th><th>Resultado</th></tr></thead><tbody id="affiliate-history"></tbody></table></div><p id="history-empty" class="empty-note">Ainda não há dias registrados.</p></section>
+    </section>
+  </main>
+  <section class="help-chat" aria-label="Assistente informativo">
+    <div id="help-chat-panel" class="help-chat-panel" hidden>
+      <div class="help-chat-heading"><div><strong>Ajuda do FOCUS</strong><span>Assistente informativo</span></div><button id="help-chat-close" type="button" aria-label="Fechar ajuda">Fechar</button></div>
+      <div id="help-chat-messages" class="help-chat-messages" role="log" aria-live="polite">
+        <p class="chat-message assistant">Olá! Posso explicar as telas, os recursos e como funciona o ciclo flexível. O que você gostaria de saber?</p>
+        <div class="help-chat-faq" aria-label="Dúvidas principais">
+          <p>Dúvidas principais</p>
+          <button type="button" data-faq="cycle">Como funciona o ciclo flexível?</button>
+          <button type="button" data-faq="calculation">Como as horas são calculadas?</button>
+          <button type="button" data-faq="sessions">Como registrar o estudo e preencher os quadradinhos?</button>
+        </div>
+      </div>
+      <form id="help-chat-form" class="help-chat-form">
+        <label class="visually-hidden" for="help-chat-input">Sua pergunta</label>
+        <input id="help-chat-input" type="text" placeholder="Pergunte sobre o FOCUS..." autocomplete="off" required />
+        <button class="button primary" type="submit">Enviar</button>
+      </form>
+    </div>
+    <button id="help-chat-toggle" class="help-chat-toggle" type="button" aria-expanded="false" aria-controls="help-chat-panel">Ajuda</button>
+  </section>
+  <footer>FOCUS <span>·</span> Seus dados ficam salvos neste navegador.</footer>
+    </div>
+  </div>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" data-cf-beacon='{"version":"2024.11.0","token":"e3c1c9af36de41759418005494a48906","r":1,"spa":2}' crossorigin="anonymous"></script>
+</body>
+</html>
