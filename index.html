@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#f7f8fa" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <title>FOCUS — Organizador pessoal</title>
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -26,7 +27,6 @@
       <button id="google-login" class="button google-button" type="button"><span aria-hidden="true">G</span> Continuar com Google</button>
       <button id="local-login" class="button secondary local-login" type="button">Continuar sem conta neste navegador</button>
       <p id="auth-status" class="status-message" aria-live="polite"></p>
-      <p class="auth-note">Acesso local mantém os dados somente neste navegador. Configure as credenciais do Supabase no script para ativar contas e Google.</p>
     </div>
   </section>
 
@@ -45,8 +45,8 @@
         <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" aria-label="Alternar tema">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.2 15.1A8.7 8.7 0 0 1 8.9 3.8 8.9 8.9 0 1 0 20.2 15.1Z"/></svg><span class="nav-label">Tema</span>
         </button>
-        <button id="reset-data" class="button danger reset-button" type="button"><span class="nav-icon" aria-hidden="true">⌫</span><span class="nav-label">Apagar dados</span></button>
-        <button id="logout-button" class="sidebar-logout" type="button"><span class="nav-icon" aria-hidden="true">↪</span><span class="nav-label">Sair</span></button>
+        <button id="reset-data" class="button danger reset-button" type="button" aria-label="Apagar dados"><span class="nav-icon" aria-hidden="true">⌫</span><span class="nav-label">Apagar dados</span></button>
+        <button id="logout-button" class="sidebar-logout" type="button" aria-label="Sair"><span class="nav-icon" aria-hidden="true">↪</span><span class="nav-label">Sair</span></button>
       </div>
     </aside>
     <div class="app-content">
@@ -120,26 +120,6 @@
       <section class="section-block history-section"><div class="section-heading"><div><h2>Histórico diário</h2><p class="muted">Os dias abaixo da meta continuam registrados.</p></div></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Vídeos publicados</th><th>Meta mínima</th><th>Resultado</th></tr></thead><tbody id="affiliate-history"></tbody></table></div><p id="history-empty" class="empty-note">Ainda não há dias registrados.</p></section>
     </section>
   </main>
-  <section class="help-chat" aria-label="Assistente informativo">
-    <div id="help-chat-panel" class="help-chat-panel" hidden>
-      <div class="help-chat-heading"><div><strong>Ajuda do FOCUS</strong><span>Assistente informativo</span></div><button id="help-chat-close" type="button" aria-label="Fechar ajuda">Fechar</button></div>
-      <div id="help-chat-messages" class="help-chat-messages" role="log" aria-live="polite">
-        <p class="chat-message assistant">Olá! Posso explicar as telas, os recursos e como funciona o ciclo flexível. O que você gostaria de saber?</p>
-        <div class="help-chat-faq" aria-label="Dúvidas principais">
-          <p>Dúvidas principais</p>
-          <button type="button" data-faq="cycle">Como funciona o ciclo flexível?</button>
-          <button type="button" data-faq="calculation">Como as horas são calculadas?</button>
-          <button type="button" data-faq="sessions">Como registrar o estudo e preencher os quadradinhos?</button>
-        </div>
-      </div>
-      <form id="help-chat-form" class="help-chat-form">
-        <label class="visually-hidden" for="help-chat-input">Sua pergunta</label>
-        <input id="help-chat-input" type="text" placeholder="Pergunte sobre o FOCUS..." autocomplete="off" required />
-        <button class="button primary" type="submit">Enviar</button>
-      </form>
-    </div>
-    <button id="help-chat-toggle" class="help-chat-toggle" type="button" aria-expanded="false" aria-controls="help-chat-panel">Ajuda</button>
-  </section>
   <footer>FOCUS <span>·</span> Seus dados ficam salvos neste navegador.</footer>
     </div>
   </div>
