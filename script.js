@@ -102,6 +102,7 @@
   let cloudReady = false;
   let cloudUpdatedAt = null;
   let cloudSaveTimer = null;
+  let cloudSaveInProgress = false;
   let cloudWriteQueue = Promise.resolve();
   let loadingUserId = null;
   let loadingAccountPromise = null;
@@ -120,15 +121,20 @@
     const userId = cloudUserId;
     cloudWriteQueue = cloudWriteQueue.catch(() => {}).then(async () => {
       if (userId !== cloudUserId || !cloudReady) return;
-      const updatedAt = new Date().toISOString();
-      const { error } = await supabaseClient.from('user_data').upsert({
-        user_id: userId,
-        data: snapshot,
-        updated_at: updatedAt
-      }, { onConflict: 'user_id' });
-      if (error) throw error;
-      cloudUpdatedAt = updatedAt;
-      setSyncStatus('Sincronizado com sua conta', 'success');
+      cloudSaveInProgress = true;
+      try {
+        const updatedAt = new Date().toISOString();
+        const { error } = await supabaseClient.from('user_data').upsert({
+          user_id: userId,
+          data: snapshot,
+          updated_at: updatedAt
+        }, { onConflict: 'user_id' });
+        if (error) throw error;
+        cloudUpdatedAt = updatedAt;
+        setSyncStatus('Sincronizado com sua conta', 'success');
+      } finally {
+        cloudSaveInProgress = false;
+      }
     }).catch((error) => {
       console.error('Não foi possível sincronizar com o Supabase.', error);
       setSyncStatus('Falha ao sincronizar. Verifique a conexão e a tabela user_data.', 'error');
@@ -139,8 +145,12 @@
   function queueCloudSave() {
     if (!supabaseClient || !cloudReady || !cloudUserId) return;
     window.clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = null;
     setSyncStatus('Salvando na sua conta…', 'pending');
-    cloudSaveTimer = window.setTimeout(persistCloudSnapshot, 350);
+    cloudSaveTimer = window.setTimeout(() => {
+      cloudSaveTimer = null;
+      persistCloudSnapshot();
+    }, 350);
   }
 
   // Salva localmente para acesso offline e sincroniza quando uma conta está autenticada.
@@ -628,6 +638,7 @@
     const token = ++accountLoadToken;
     cloudReady = false;
     window.clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = null;
     setSyncStatus('Carregando dados da sua conta…', 'pending');
     loadingAccountPromise = (async () => {
       try {
@@ -641,22 +652,53 @@
 
         const localState = state;
         const localHasData = hasSavedContent(localState);
-        // Uma linha existente, mesmo vazia, é a fonte oficial da conta; migra local só na primeira criação.
-        state = normalizeState(row ? row.data : (localHasData ? localState : initialState()));
-        cloudUserId = userId;
-        cloudUpdatedAt = row?.updated_at || null;
-        cloudReady = true;
-        if (!row) {
+        let accountRow = row;
+        if (accountRow && !hasSavedContent(accountRow.data) && localHasData && window.confirm('A conta na nuvem está vazia, mas este dispositivo tem dados locais. Deseja enviar os dados locais (incluindo ciclos) para a conta e sincronizá-los nos outros dispositivos?')) {
+          const candidate = normalizeState(localState);
           const updatedAt = new Date().toISOString();
-          const { error: saveError } = await supabaseClient.from('user_data').upsert({
+          const { error: migrationError } = await supabaseClient.from('user_data').upsert({
             user_id: userId,
-            data: state,
+            data: candidate,
             updated_at: updatedAt
           }, { onConflict: 'user_id' });
-          if (saveError) throw saveError;
-          cloudUpdatedAt = updatedAt;
+          if (migrationError) throw migrationError;
+          accountRow = { data: candidate, updated_at: updatedAt };
+        }
+        if (!accountRow) {
+          const candidate = normalizeState(localHasData ? localState : initialState());
+          const updatedAt = new Date().toISOString();
+          const { error: insertError } = await supabaseClient.from('user_data').insert({
+            user_id: userId,
+            data: candidate,
+            updated_at: updatedAt
+          });
+          if (insertError?.code === '23505') {
+            // Outro dispositivo criou a linha primeiro; carregue a conta em vez de sobrescrevê-la.
+            const { data: existingRow, error: reloadError } = await supabaseClient
+              .from('user_data')
+              .select('data, updated_at')
+              .eq('user_id', userId)
+              .single();
+            if (reloadError) throw reloadError;
+            accountRow = existingRow;
+          } else if (insertError) {
+            throw insertError;
+          } else {
+            accountRow = { data: candidate, updated_at: updatedAt };
+          }
         }
         if (token !== accountLoadToken) return;
+
+        // A linha da conta é a fonte oficial após a migração inicial, inclusive se estiver vazia.
+        state = normalizeState(accountRow.data);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        } catch (storageError) {
+          console.warn('Os dados foram carregados da conta, mas não puderam ser guardados neste navegador.', storageError);
+        }
+        cloudUserId = userId;
+        cloudUpdatedAt = accountRow.updated_at || null;
+        cloudReady = true;
         renderWorkspaceState();
         setSyncStatus('Sincronizado com sua conta', 'success');
         showWorkspace();
@@ -677,6 +719,42 @@
     })();
     return loadingAccountPromise;
   }
+
+  async function refreshAccountData() {
+    if (!supabaseClient || !cloudReady || !cloudUserId || document.hidden || cloudSaveTimer !== null || cloudSaveInProgress) return;
+    const userId = cloudUserId;
+    try {
+      const { data: row, error } = await supabaseClient
+        .from('user_data')
+        .select('data, updated_at')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (error) throw error;
+      if (userId !== cloudUserId || !row) return;
+      const remoteTime = Date.parse(row.updated_at || '');
+      const localTime = Date.parse(cloudUpdatedAt || '');
+      if (Number.isFinite(remoteTime) && remoteTime > localTime) {
+        state = normalizeState(row.data);
+        cloudUpdatedAt = row.updated_at;
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        } catch (storageError) {
+          console.warn('Dados atualizados da conta, mas o cache local não pôde ser atualizado.', storageError);
+        }
+        renderWorkspaceState();
+        setSyncStatus('Dados atualizados da sua conta', 'success');
+      }
+    } catch (error) {
+      console.error('Não foi possível atualizar os dados da conta.', error);
+      setSyncStatus('Não foi possível atualizar da nuvem. Verifique sua conexão.', 'error');
+    }
+  }
+
+  window.addEventListener('focus', refreshAccountData);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshAccountData();
+  });
+
 
   function showWorkspace(localOnly = false) {
     localAccess = localOnly;
@@ -712,6 +790,7 @@
         cloudReady = false;
         cloudUserId = null;
         window.clearTimeout(cloudSaveTimer);
+        cloudSaveTimer = null;
         if (!localAccess) showAuth();
       }
     });
@@ -767,6 +846,7 @@
   $('#logout-button').addEventListener('click', async () => {
     if (supabaseClient && !localAccess) {
       window.clearTimeout(cloudSaveTimer);
+      cloudSaveTimer = null;
       await persistCloudSnapshot();
       const { error } = await supabaseClient.auth.signOut();
       if (error) setAuthStatus(error.message, true);
@@ -823,6 +903,7 @@
     if (!window.confirm('Apagar todas as matérias, ciclos, horários, revisões e registros de afiliados? Esta ação não pode ser desfeita.')) return;
     try {
       window.clearTimeout(cloudSaveTimer);
+      cloudSaveTimer = null;
       await cloudWriteQueue;
       if (cloudReady && cloudUserId) {
         const { error } = await supabaseClient.from('user_data').upsert({

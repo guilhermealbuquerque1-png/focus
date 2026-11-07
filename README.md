@@ -80,9 +80,9 @@ Com RLS ativa, cada pessoa autenticada só pode consultar ou alterar a linha cuj
 
 A sincronização está ligada ao fluxo de autenticação em `script.js`: ao restaurar ou iniciar uma sessão, o app consulta `user_data` pelo `user_id`, normaliza o estado e atualiza as telas. Cada alteração é salva localmente e enviada ao banco com `upsert` após uma pequena pausa. A tela mostra o estado da sincronização.
 
-No primeiro acesso a uma conta sem linha, os dados locais deste navegador são migrados para a conta. Quando a linha já existe, seu conteúdo é carregado e substitui o estado local exibido, inclusive quando a linha está vazia após apagar os dados. Assim, se você já usava o app em vários dispositivos antes de ativar o banco, escolha primeiro o dispositivo que contém os dados que deseja preservar e entre nele para fazer a migração inicial.
+No primeiro acesso a uma conta sem linha, os dados locais deste navegador são migrados para a conta. Se a linha da conta existir, mas estiver vazia enquanto este dispositivo tiver dados locais, o app pergunta se você deseja recuperar esses dados locais para a nuvem. Confirme apenas no dispositivo que contém os ciclos e dados que deseja preservar. Se a conta já tiver dados, a nuvem continua sendo a fonte oficial para evitar substituir informações mais recentes por uma cópia local antiga.
 
-A sincronização é feita ao entrar e quando cada alteração é salva; não há atualização em tempo real de uma tela que já esteja aberta simultaneamente em outro dispositivo. Recarregue/entre novamente no outro dispositivo para buscar os dados mais recentes.
+A sincronização é feita ao entrar e quando cada alteração é salva. Ao voltar para a aba do app, ele também busca atualizações mais recentes da conta. Não há atualização instantânea enquanto duas telas permanecem abertas e ativas ao mesmo tempo; volte à aba ou entre novamente para buscar os dados mais recentes.
 
 ## Segurança e publicação
 
