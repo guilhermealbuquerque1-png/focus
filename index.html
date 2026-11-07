@@ -34,22 +34,33 @@
     <aside id="sidebar" class="sidebar" aria-label="Menu lateral">
       <div class="sidebar-top">
         <a class="brand" href="#configurar" aria-label="FOCUS, configurar">FOCUS</a>
-        <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Recolher menu" aria-expanded="true">‹</button>
+        <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Abrir menu" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="menu-lines" d="M4 6h16M4 12h16M4 18h16"/><path class="close-lines" d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
       </div>
       <nav class="navigation" aria-label="Navegação principal">
-        <button class="nav-button active" data-view="configurar" type="button"><span class="nav-icon" aria-hidden="true">⚙</span><span class="nav-label">Configurar</span></button>
-        <button class="nav-button" data-view="ciclos" type="button"><span class="nav-icon" aria-hidden="true">◷</span><span class="nav-label">Ciclos</span></button>
-        <button class="nav-button" data-view="afiliados" type="button"><span class="nav-icon" aria-hidden="true">◇</span><span class="nav-label">Afiliados</span></button>
+        <button class="nav-button active" data-view="configurar" type="button"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/><path d="M19.4 13.5a7.7 7.7 0 0 0 0-3l1.4-1.1-1.5-2.6-1.7.7a7.7 7.7 0 0 0-2.6-1.5L14.7 4h-3.1l-.3 2a7.7 7.7 0 0 0-2.6 1.5L7 6.8 5.5 9.4l1.4 1.1a7.7 7.7 0 0 0 0 3l-1.4 1.1L7 17.2l1.7-.7a7.7 7.7 0 0 0 2.6 1.5l.3 2h3.1l.3-2a7.7 7.7 0 0 0 2.6-1.5l1.7.7 1.5-2.6-1.4-1.1Z"/></svg></span><span class="nav-label">Configurar</span></button>
+        <button class="nav-button" data-view="ciclos" type="button"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 6.5V12l4 2.4"/></svg></span><span class="nav-label">Ciclos</span></button>
+        <button class="nav-button" data-view="afiliados" type="button"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3.5 8.5 8.5-8.5 8.5L3.5 12 12 3.5Z"/><path d="M8.5 12h7"/></svg></span><span class="nav-label">Afiliados</span></button>
       </nav>
       <div class="sidebar-actions">
         <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" aria-label="Alternar tema">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.2 15.1A8.7 8.7 0 0 1 8.9 3.8 8.9 8.9 0 1 0 20.2 15.1Z"/></svg><span class="nav-label">Tema</span>
         </button>
-        <button id="reset-data" class="button danger reset-button" type="button" aria-label="Apagar dados"><span class="nav-icon" aria-hidden="true">⌫</span><span class="nav-label">Apagar dados</span></button>
-        <button id="logout-button" class="sidebar-logout" type="button" aria-label="Sair"><span class="nav-icon" aria-hidden="true">↪</span><span class="nav-label">Sair</span></button>
+        <button id="reset-data" class="button danger reset-button" type="button" aria-label="Apagar dados"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-.8 13H6.8L6 7m4 3v6m4-6v6"/></svg></span><span class="nav-label">Apagar dados</span></button>
+        <button id="logout-button" class="sidebar-logout" type="button" aria-label="Sair"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 5H5v14h5M14 8l4 4-4 4m4-4H9"/></svg></span><span class="nav-label">Sair</span></button>
       </div>
     </aside>
+    <button id="mobile-menu-backdrop" class="mobile-menu-backdrop" type="button" aria-label="Fechar menu" tabindex="-1" hidden></button>
+    <div class="mobile-topbar">
+      <a class="brand" href="#configurar" aria-label="FOCUS, início">FOCUS</a>
+      <button id="mobile-menu-trigger" class="mobile-menu-trigger" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Abrir menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+        <span>Menu</span>
+      </button>
+    </div>
     <div class="app-content">
+      <p id="sync-status" class="sync-status" aria-live="polite" hidden></p>
   <main>
     <section id="view-configurar" class="view active" aria-labelledby="configurar-title">
       <div class="page-heading"><div><p class="eyebrow">ORGANIZAÇÃO</p><h1 id="configurar-title">Configurar</h1><p class="muted">Defina as matérias, estime as horas e ajuste sua disponibilidade.</p></div></div>
@@ -120,7 +131,7 @@
       <section class="section-block history-section"><div class="section-heading"><div><h2>Histórico diário</h2><p class="muted">Os dias abaixo da meta continuam registrados.</p></div></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Vídeos publicados</th><th>Meta mínima</th><th>Resultado</th></tr></thead><tbody id="affiliate-history"></tbody></table></div><p id="history-empty" class="empty-note">Ainda não há dias registrados.</p></section>
     </section>
   </main>
-  <footer>FOCUS <span>·</span> Seus dados ficam salvos neste navegador.</footer>
+  <footer>FOCUS <span>·</span> Com conta, seus dados sincronizam entre dispositivos; sem conta, ficam neste navegador.</footer>
     </div>
   </div>
 <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" data-cf-beacon='{"version":"2024.11.0","token":"e3c1c9af36de41759418005494a48906","r":1,"spa":2}' crossorigin="anonymous"></script>

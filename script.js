@@ -97,7 +97,53 @@
   setTheme(savedTheme(), false);
   const makeId = () => window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 
-  // All persistence passes through this function so storage can later be replaced by a sync layer.
+  let supabaseClient = null;
+  let cloudUserId = null;
+  let cloudReady = false;
+  let cloudUpdatedAt = null;
+  let cloudSaveTimer = null;
+  let cloudWriteQueue = Promise.resolve();
+  let loadingUserId = null;
+  let loadingAccountPromise = null;
+
+  function setSyncStatus(message, status = '') {
+    const element = $('#sync-status');
+    if (!element) return;
+    element.textContent = message;
+    element.dataset.status = status;
+    element.hidden = !message;
+  }
+
+  function persistCloudSnapshot() {
+    if (!supabaseClient || !cloudReady || !cloudUserId) return cloudWriteQueue;
+    const snapshot = JSON.parse(JSON.stringify(state));
+    const userId = cloudUserId;
+    cloudWriteQueue = cloudWriteQueue.catch(() => {}).then(async () => {
+      if (userId !== cloudUserId || !cloudReady) return;
+      const updatedAt = new Date().toISOString();
+      const { error } = await supabaseClient.from('user_data').upsert({
+        user_id: userId,
+        data: snapshot,
+        updated_at: updatedAt
+      }, { onConflict: 'user_id' });
+      if (error) throw error;
+      cloudUpdatedAt = updatedAt;
+      setSyncStatus('Sincronizado com sua conta', 'success');
+    }).catch((error) => {
+      console.error('Não foi possível sincronizar com o Supabase.', error);
+      setSyncStatus('Falha ao sincronizar. Verifique a conexão e a tabela user_data.', 'error');
+    });
+    return cloudWriteQueue;
+  }
+
+  function queueCloudSave() {
+    if (!supabaseClient || !cloudReady || !cloudUserId) return;
+    window.clearTimeout(cloudSaveTimer);
+    setSyncStatus('Salvando na sua conta…', 'pending');
+    cloudSaveTimer = window.setTimeout(persistCloudSnapshot, 350);
+  }
+
+  // Salva localmente para acesso offline e sincroniza quando uma conta está autenticada.
   function saveState() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -105,6 +151,7 @@
       console.error('Não foi possível salvar os dados.', error);
       window.alert('Não foi possível salvar os dados neste navegador. Verifique o espaço disponível.');
     }
+    queueCloudSave();
   }
 
   function todayKey() {
@@ -537,10 +584,99 @@
     saveState();
   });
 
-  let supabaseClient = null;
   let authMode = 'login';
   let localAccess = false;
+  let accountLoadToken = 0;
   const supabaseConfigured = !SUPABASE_URL.includes('YOUR_PROJECT') && !SUPABASE_ANON_KEY.includes('YOUR_');
+
+  function hasSavedContent(data) {
+    if (!data) return false;
+    const customSchedule = Array.isArray(data.schedule) && JSON.stringify(data.schedule) !== JSON.stringify(initialState().schedule);
+    return Boolean(
+      (Array.isArray(data.subjects) && data.subjects.length) ||
+      (Array.isArray(data.cycles) && data.cycles.length) ||
+      (Array.isArray(data.reviews) && data.reviews.length) ||
+      (data.affiliateRecords && Object.keys(data.affiliateRecords).length) ||
+      (data.affiliateChecklist && Object.keys(data.affiliateChecklist).length) ||
+      (typeof data.availability === 'string' && data.availability.trim()) ||
+      customSchedule ||
+      (Number(data.factor) && Number(data.factor) !== 60)
+    );
+  }
+
+  function renderWorkspaceState() {
+    $('#cycle-factor').value = String(state.factor);
+    $('#availability').value = state.availability;
+    renderSchedule();
+    document.querySelectorAll('[data-day]').forEach((input) => {
+      const enabled = $(`[data-schedule-day="${input.dataset.day}"]`).checked;
+      input.disabled = !enabled;
+    });
+    renderSubjects();
+    renderReviews();
+    renderCycles();
+    renderAffiliates();
+  }
+
+  async function loadAccountData(userId) {
+    if (cloudReady && cloudUserId === userId) {
+      showWorkspace();
+      return;
+    }
+    if (loadingUserId === userId && loadingAccountPromise) return loadingAccountPromise;
+    loadingUserId = userId;
+    const token = ++accountLoadToken;
+    cloudReady = false;
+    window.clearTimeout(cloudSaveTimer);
+    setSyncStatus('Carregando dados da sua conta…', 'pending');
+    loadingAccountPromise = (async () => {
+      try {
+        const { data: row, error } = await supabaseClient
+          .from('user_data')
+          .select('data, updated_at')
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (error) throw error;
+        if (token !== accountLoadToken) return;
+
+        const localState = state;
+        const localHasData = hasSavedContent(localState);
+        // Uma linha existente, mesmo vazia, é a fonte oficial da conta; migra local só na primeira criação.
+        state = normalizeState(row ? row.data : (localHasData ? localState : initialState()));
+        cloudUserId = userId;
+        cloudUpdatedAt = row?.updated_at || null;
+        cloudReady = true;
+        if (!row) {
+          const updatedAt = new Date().toISOString();
+          const { error: saveError } = await supabaseClient.from('user_data').upsert({
+            user_id: userId,
+            data: state,
+            updated_at: updatedAt
+          }, { onConflict: 'user_id' });
+          if (saveError) throw saveError;
+          cloudUpdatedAt = updatedAt;
+        }
+        if (token !== accountLoadToken) return;
+        renderWorkspaceState();
+        setSyncStatus('Sincronizado com sua conta', 'success');
+        showWorkspace();
+      } catch (error) {
+        if (token !== accountLoadToken) return;
+        console.error('Não foi possível carregar os dados da conta.', error);
+        cloudReady = false;
+        cloudUserId = null;
+        setSyncStatus('');
+        setAuthStatus(`Não foi possível acessar user_data no Supabase: ${error.message}. Confira a tabela e as políticas RLS no README.`, true);
+        showAuth();
+      } finally {
+        if (loadingUserId === userId) {
+          loadingUserId = null;
+          loadingAccountPromise = null;
+        }
+      }
+    })();
+    return loadingAccountPromise;
+  }
 
   function showWorkspace(localOnly = false) {
     localAccess = localOnly;
@@ -568,12 +704,22 @@
     }
     supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     supabaseClient.auth.onAuthStateChange((_event, session) => {
-      if (session) showWorkspace();
-      else if (!localAccess) showAuth();
+      if (session) {
+        localAccess = false;
+        window.setTimeout(() => loadAccountData(session.user.id), 0);
+      } else {
+        accountLoadToken += 1;
+        cloudReady = false;
+        cloudUserId = null;
+        window.clearTimeout(cloudSaveTimer);
+        if (!localAccess) showAuth();
+      }
     });
     supabaseClient.auth.getSession().then(({ data, error }) => {
       if (error) setAuthStatus(error.message, true);
-      if (data?.session) showWorkspace();
+      if (data?.session) loadAccountData(data.session.user.id);
+    }).catch((error) => {
+      setAuthStatus(`Não foi possível restaurar a sessão: ${error.message}`, true);
     });
   }
 
@@ -611,37 +757,60 @@
     if (error) setAuthStatus(error.message, true);
   });
 
-  $('#local-login').addEventListener('click', () => showWorkspace(true));
+  $('#local-login').addEventListener('click', () => {
+    cloudReady = false;
+    cloudUserId = null;
+    localAccess = true;
+    setSyncStatus('Modo sem conta: dados apenas neste navegador', 'local');
+    showWorkspace(true);
+  });
   $('#logout-button').addEventListener('click', async () => {
     if (supabaseClient && !localAccess) {
+      window.clearTimeout(cloudSaveTimer);
+      await persistCloudSnapshot();
       const { error } = await supabaseClient.auth.signOut();
       if (error) setAuthStatus(error.message, true);
     } else showAuth();
   });
 
-  const savedSidebarState = localStorage.getItem('focus-sidebar-collapsed') === 'true';
   const sidebarToggle = $('#sidebar-toggle');
+  const mobileMenuTrigger = $('#mobile-menu-trigger');
+  const mobileMenuBackdrop = $('#mobile-menu-backdrop');
   const appShell = $('#app-shell');
   const mobileMenuQuery = window.matchMedia('(max-width: 760px)');
-  appShell.classList.toggle('sidebar-collapsed', savedSidebarState);
+  appShell.classList.remove('sidebar-collapsed');
 
   function updateSidebarToggle() {
-    const mobileOpen = mobileMenuQuery.matches && appShell.classList.contains('mobile-menu-open');
-    const desktopCollapsed = !mobileMenuQuery.matches && appShell.classList.contains('sidebar-collapsed');
-    const expanded = mobileMenuQuery.matches ? mobileOpen : !desktopCollapsed;
-    sidebarToggle.setAttribute('aria-expanded', String(expanded));
-    sidebarToggle.setAttribute('aria-label', expanded ? 'Fechar menu' : 'Abrir menu');
+    const menuOpen = appShell.classList.contains('mobile-menu-open');
+    sidebarToggle.setAttribute('aria-expanded', String(menuOpen));
+    sidebarToggle.setAttribute('aria-label', menuOpen ? 'Fechar menu' : 'Abrir menu');
+    mobileMenuTrigger.setAttribute('aria-expanded', String(menuOpen));
+    mobileMenuTrigger.setAttribute('aria-label', menuOpen ? 'Fechar menu' : 'Abrir menu');
+    mobileMenuBackdrop.hidden = !menuOpen;
   }
 
   updateSidebarToggle();
-  sidebarToggle.addEventListener('click', () => {
-    if (mobileMenuQuery.matches) {
-      appShell.classList.toggle('mobile-menu-open');
-    } else {
-      const collapsed = appShell.classList.toggle('sidebar-collapsed');
-      localStorage.setItem('focus-sidebar-collapsed', String(collapsed));
-    }
+  mobileMenuTrigger.addEventListener('click', () => {
+    appShell.classList.add('mobile-menu-open');
     updateSidebarToggle();
+    sidebarToggle.focus();
+  });
+  mobileMenuBackdrop.addEventListener('click', () => {
+    appShell.classList.remove('mobile-menu-open');
+    updateSidebarToggle();
+    mobileMenuTrigger.focus();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && appShell.classList.contains('mobile-menu-open')) {
+      appShell.classList.remove('mobile-menu-open');
+      updateSidebarToggle();
+      mobileMenuTrigger.focus();
+    }
+  });
+  sidebarToggle.addEventListener('click', () => {
+    appShell.classList.remove('mobile-menu-open');
+    updateSidebarToggle();
+    mobileMenuTrigger.focus();
   });
   mobileMenuQuery.addEventListener('change', updateSidebarToggle);
   initializeAuth();
@@ -650,14 +819,24 @@
     setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
   });
 
-  $('#reset-data').addEventListener('click', () => {
+  $('#reset-data').addEventListener('click', async () => {
     if (!window.confirm('Apagar todas as matérias, ciclos, horários, revisões e registros de afiliados? Esta ação não pode ser desfeita.')) return;
     try {
+      window.clearTimeout(cloudSaveTimer);
+      await cloudWriteQueue;
+      if (cloudReady && cloudUserId) {
+        const { error } = await supabaseClient.from('user_data').upsert({
+          user_id: cloudUserId,
+          data: initialState(),
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+        if (error) throw error;
+      }
       localStorage.removeItem(STORAGE_KEY);
       window.location.reload();
     } catch (error) {
       console.error('Não foi possível apagar os dados salvos.', error);
-      window.alert('Não foi possível apagar os dados deste navegador.');
+      window.alert(`Não foi possível apagar os dados: ${error.message}`);
     }
   });
 
@@ -668,10 +847,9 @@
   renderReviews();
   document.querySelectorAll('.nav-button').forEach((button) => button.addEventListener('click', () => {
     navigate(button.dataset.view);
-    if (mobileMenuQuery.matches) {
-      appShell.classList.remove('mobile-menu-open');
-      updateSidebarToggle();
-    }
+    appShell.classList.remove('mobile-menu-open');
+    updateSidebarToggle();
+    mobileMenuTrigger.focus();
   }));
   document.querySelectorAll('[data-day]').forEach((input) => {
     const day = input.dataset.day;

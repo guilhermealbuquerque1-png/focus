@@ -2,12 +2,13 @@
 
 Este guia explica como habilitar cadastro e login por e-mail/senha e acesso com Google, além de preparar uma tabela para os dados do FOCUS.
 
-## Como está integrado hoje
+## Como a sincronização funciona
 
-- A tela inicial já chama a autenticação do Supabase para entrar/criar conta e iniciar OAuth com Google.
-- **Entrar com Google não exige uma senha do FOCUS**: a pessoa autoriza a própria conta Google e retorna autenticada ao aplicativo.
-- Os dados do organizador (matérias, ciclos, disponibilidade, revisões e afiliados) **ainda são salvos apenas no `localStorage` do navegador**. Fazer login não os sincroniza com o banco; a etapa de leitura e gravação no banco ainda precisa ser implementada.
-- “Continuar sem conta” acessa o organizador sem autenticação e também usa armazenamento local.
+- Ao entrar com e-mail/senha ou Google, o FOCUS carrega o estado da tabela `public.user_data` da conta autenticada.
+- Matérias, ciclos, disponibilidade, revisões e registros de afiliados são gravados no Supabase após cada alteração, além de permanecerem em `localStorage` como cópia local.
+- Se a conta ainda não tiver uma linha no banco, os dados locais existentes neste navegador são enviados uma vez para a conta. Uma linha existente é sempre a fonte oficial, mesmo que esteja vazia (por exemplo, após apagar os dados), para não restaurar cópias antigas de outros dispositivos.
+- “Continuar sem conta” continua usando somente o armazenamento local e não sincroniza entre dispositivos.
+- Para habilitar a sincronização, configure as credenciais públicas do projeto e crie a tabela e as políticas RLS abaixo. Sem essa tabela/políticas, o login pode funcionar, mas a sincronização não.
 
 ## 1. Configurar o projeto Supabase
 
@@ -75,50 +76,13 @@ with check ((select auth.uid()) = user_id);
 
 Com RLS ativa, cada pessoa autenticada só pode consultar ou alterar a linha cujo `user_id` corresponde à sua sessão. Não desative RLS nem crie políticas que permitam acesso anônimo a todos os registros.
 
-## 4. Conectar o estado do FOCUS ao banco
+## 4. Sincronização de dados
 
-A instância do cliente Supabase já é criada em `script.js` como `supabaseClient`. Depois do login, a aplicação precisa carregar os dados do usuário e substituir `loadState()`/`saveState()` por operações *****íncronas na tabela `user_data`.
+A sincronização está ligada ao fluxo de autenticação em `script.js`: ao restaurar ou iniciar uma sessão, o app consulta `user_data` pelo `user_id`, normaliza o estado e atualiza as telas. Cada alteração é salva localmente e enviada ao banco com `upsert` após uma pequena pausa. A tela mostra o estado da sincronização.
 
-Exemplo básico de leitura após autenticação:
+No primeiro acesso a uma conta sem linha, os dados locais deste navegador são migrados para a conta. Quando a linha já existe, seu conteúdo é carregado e substitui o estado local exibido, inclusive quando a linha está vazia após apagar os dados. Assim, se você já usava o app em vários dispositivos antes de ativar o banco, escolha primeiro o dispositivo que contém os dados que deseja preservar e entre nele para fazer a migração inicial.
 
-```js
-const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
-if (userError) throw userError;
-
-const { data, error } = await supabaseClient
-  .from('user_data')
-  .select('data')
-  .eq('user_id', user.id)
-  .maybeSingle();
-
-if (error) throw error;
-// Se data existir, validar/normalizar data.data antes de usar como estado do FOCUS.
-```
-
-Exemplo básico para salvar o estado atual (`state`):
-
-```js
-const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
-if (userError) throw userError;
-
-const { error } = await supabaseClient
-  .from('user_data')
-  .upsert({
-    user_id: user.id,
-    data: state,
-    updated_at: new Date().toISOString()
-  }, { onConflict: 'user_id' });
-
-if (error) throw error;
-```
-
-Esses exemplos são uma referência; **não estão conectados automaticamente ao salvamento atual**. Para completar a sincronização, a implementação deve:
-
-1. Aguardar a sessão Supabase ser restaurada e só então buscar os dados do usuário;
-2. Normalizar os dados recebidos com `normalizeState()` e atualizar as telas;
-3. Persistir alterações com `upsert` para sessões autenticadas, mantendo `localStorage` como alternativa para acesso local/offline, se desejado;
-4. Definir como migrar os dados locais existentes e como resolver alterações feitas em mais de um dispositivo;
-5. Tratar erros e estados de carregamento sem sobrescrever dados do banco com um estado vazio.
+A sincronização é feita ao entrar e quando cada alteração é salva; não há atualização em tempo real de uma tela que já esteja aberta simultaneamente em outro dispositivo. Recarregue/entre novamente no outro dispositivo para buscar os dados mais recentes.
 
 ## Segurança e publicação
 
