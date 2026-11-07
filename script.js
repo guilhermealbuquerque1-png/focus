@@ -68,6 +68,12 @@
   let state = loadState();
   const $ = (selector) => document.querySelector(selector);
   const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+  const stableStringify = (value) => JSON.stringify(value, (key, item) => {
+    if (item && typeof item === 'object' && !Array.isArray(item)) {
+      return Object.fromEntries(Object.keys(item).sort().map((objectKey) => [objectKey, item[objectKey]]));
+    }
+    return item;
+  });
 
   function setTheme(theme, persist = true) {
     document.documentElement.dataset.theme = theme;
@@ -103,6 +109,8 @@
   let cloudUpdatedAt = null;
   let cloudSaveTimer = null;
   let cloudSaveInProgress = false;
+  let cloudWritesPending = 0;
+  let cloudRefreshInProgress = false;
   let cloudWriteQueue = Promise.resolve();
   let loadingUserId = null;
   let loadingAccountPromise = null;
@@ -119,6 +127,7 @@
     if (!supabaseClient || !cloudReady || !cloudUserId) return cloudWriteQueue;
     const snapshot = JSON.parse(JSON.stringify(state));
     const userId = cloudUserId;
+    cloudWritesPending += 1;
     cloudWriteQueue = cloudWriteQueue.catch(() => {}).then(async () => {
       if (userId !== cloudUserId || !cloudReady) return;
       cloudSaveInProgress = true;
@@ -138,6 +147,8 @@
     }).catch((error) => {
       console.error('Não foi possível sincronizar com o Supabase.', error);
       setSyncStatus('Falha ao sincronizar. Verifique a conexão e a tabela user_data.', 'error');
+    }).finally(() => {
+      cloudWritesPending = Math.max(0, cloudWritesPending - 1);
     });
     return cloudWriteQueue;
   }
@@ -721,8 +732,9 @@
   }
 
   async function refreshAccountData() {
-    if (!supabaseClient || !cloudReady || !cloudUserId || document.hidden || cloudSaveTimer !== null || cloudSaveInProgress) return;
+    if (!supabaseClient || !cloudReady || !cloudUserId || document.hidden || cloudSaveTimer !== null || cloudSaveInProgress || cloudWritesPending > 0 || cloudRefreshInProgress) return;
     const userId = cloudUserId;
+    cloudRefreshInProgress = true;
     try {
       const { data: row, error } = await supabaseClient
         .from('user_data')
@@ -730,12 +742,14 @@
         .eq('user_id', userId)
         .maybeSingle();
       if (error) throw error;
-      if (userId !== cloudUserId || !row) return;
-      const remoteTime = Date.parse(row.updated_at || '');
-      const localTime = Date.parse(cloudUpdatedAt || '');
-      if (Number.isFinite(remoteTime) && remoteTime > localTime) {
-        state = normalizeState(row.data);
-        cloudUpdatedAt = row.updated_at;
+      if (userId !== cloudUserId || !row || cloudSaveTimer !== null || cloudSaveInProgress || cloudWritesPending > 0) return;
+      const remoteState = normalizeState(row.data);
+      const remoteData = stableStringify(remoteState);
+      const localData = stableStringify(state);
+      cloudUpdatedAt = row.updated_at || cloudUpdatedAt;
+      if (remoteData !== localData) {
+        // Sem gravações locais pendentes, a linha da conta é a fonte oficial entre dispositivos.
+        state = remoteState;
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
         } catch (storageError) {
@@ -747,10 +761,13 @@
     } catch (error) {
       console.error('Não foi possível atualizar os dados da conta.', error);
       setSyncStatus('Não foi possível atualizar da nuvem. Verifique sua conexão.', 'error');
+    } finally {
+      cloudRefreshInProgress = false;
     }
   }
 
   window.addEventListener('focus', refreshAccountData);
+  window.setInterval(refreshAccountData, 10000);
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) refreshAccountData();
   });
